@@ -1,7 +1,7 @@
 import pandas as pd
 from itertools import combinations
 from collections import defaultdict
-import time
+import time 
 from multiprocessing import Pool, cpu_count
 import ast
 
@@ -113,7 +113,7 @@ def main():
     output_df['valid_combinations_sets'] = output_df['valid_combinations_sets'].apply(ast.literal_eval)
     
     # Save results
-    output_df.to_excel("combinations_with_0.9kw_tolerance.xlsx", 
+    output_df.to_excel("combinations_with_0.5kw_tolerance.xlsx", 
                        columns=['timestamp', 'total_kw', 'valid_combinations_count', 'valid_combinations_sets'],
                        index=False)
     
