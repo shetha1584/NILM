@@ -1,13 +1,49 @@
 import pandas as pd
+from itertools import combinations
 
-# Load the existing file
-df = pd.read_excel("combinations_with_0.9kw_tolerance.xlsx")
+# Load the Excel files
+machine_df = pd.read_excel("final_machine_capacity.xlsx")
+energy_xls = pd.ExcelFile("energy_meter_with_nonzero_delta.xlsx")  # Load all sheets
 
-# Convert total_kw to numeric (force errors to NaN), then remove rows where it's 0 or NaN
-df['total_kw'] = pd.to_numeric(df['total_kw'], errors='coerce')
-df_cleaned = df[df['total_kw'].fillna(0) != 0]
+# Extract machine names and capacities
+machines = machine_df[['machine_name', 'machine_capacity_(kw)']].dropna()
+machine_list = list(zip(machines['machine_name'], machines['machine_capacity_(kw)']))
 
-# Save cleaned version
-df_cleaned.to_excel("combinations_with_0.9kw_tolerance_cleaned.xlsx", index=False)
+# Tolerance level
+tolerance = 0.5
 
-print(f"✅ Cleaned file saved with {len(df_cleaned)} rows (removed {len(df) - len(df_cleaned)} rows with total_kw = 0 or invalid).")
+# Initialize result list
+all_results = []
+
+# Loop through each sheet
+for sheet_name in energy_xls.sheet_names:
+    energy_df = energy_xls.parse(sheet_name)
+
+    for _, row in energy_df[['timestamp', 'total_kW']].dropna().iterrows():
+        timestamp = row['timestamp']
+        target_kw = row['total_kW']
+        
+        valid_combinations = []
+
+        for r in range(1, len(machine_list) + 1):
+            for combo in combinations(machine_list, r):
+                combo_kw = sum([cap for _, cap in combo])
+                if abs(combo_kw - target_kw) <= tolerance:
+                    valid_combinations.append([name for name, _ in combo])
+        
+        all_results.append({
+            'sheet': sheet_name,
+            'timestamp': timestamp,
+            'total_kw': target_kw,
+            'number_of_combinations': len(valid_combinations),
+            'combinations': str(valid_combinations)
+        })
+
+# Convert all results to DataFrame
+final_df = pd.DataFrame(all_results)
+
+# Save to Excel
+final_df.to_excel("machine_combinations_output.xlsx", index=False)
+
+print("✅ File 'machine_combinations_output.xlsx' has been created with all sheet data.")
+

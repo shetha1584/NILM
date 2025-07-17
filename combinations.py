@@ -6,10 +6,9 @@ from multiprocessing import Pool, cpu_count
 import ast
 
 def pre_filter_machines(target_kw, tolerance, machine_data):
-    """Filter machines within range of target_kw ± tolerance"""
-    max_possible = target_kw + tolerance
-    min_possible = target_kw - tolerance
-    return [(kw, name) for kw, name in machine_data if kw <= max_possible and kw >= min_possible / 7]
+    # No filtering — return all machines
+    return machine_data
+
 
 def find_small_combinations(capacities_names, target, tolerance, max_size=4):
     """Find 1-4 machine combinations with capacities close to target"""
@@ -28,7 +27,7 @@ def find_small_combinations(capacities_names, target, tolerance, max_size=4):
                 results.append([name for kw, name in combo])
     return results
 
-def find_large_combinations_dp(capacities_names, target, tolerance, min_size=5, max_size=7):
+def find_large_combinations_dp(capacities_names, target, tolerance, min_size=5, max_size=10):
     """Find 5-7 machine combinations using dynamic programming"""
     if not capacities_names:
         return []
