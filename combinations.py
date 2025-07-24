@@ -1,125 +1,49 @@
 import pandas as pd
 from itertools import combinations
-from collections import defaultdict
-import time 
-from multiprocessing import Pool, cpu_count
-import ast
 
-def pre_filter_machines(target_kw, tolerance, machine_data):
-    # No filtering — return all machines
-    return machine_data
+# Load the Excel files
+machine_df = pd.read_excel("final_machine_capacity.xlsx")
+energy_xls = pd.ExcelFile("energy_meter_with_nonzero_delta.xlsx")  # Load all sheets
 
+# Extract machine names and capacities
+machines = machine_df[['machine_name', 'machine_capacity_(kw)']].dropna()
+machine_list = list(zip(machines['machine_name'], machines['machine_capacity_(kw)']))
 
-def find_small_combinations(capacities_names, target, tolerance, max_size=4):
-    """Find 1-4 machine combinations with capacities close to target"""
-    results = []
-    capacities, names = zip(*capacities_names) if capacities_names else ([], [])
-    
-    for r in range(1, min(max_size, len(capacities_names)) + 1):
-        if sum(capacities[:r]) < target - tolerance:
-            continue
-        if sum(capacities[-r:]) > target + tolerance:
-            continue
-            
-        for combo in combinations(capacities_names, r):
-            combo_sum = sum(kw for kw, name in combo)
-            if abs(combo_sum - target) <= tolerance:
-                results.append([name for kw, name in combo])
-    return results
+# Tolerance level
+tolerance = 0.5
 
-def find_large_combinations_dp(capacities_names, target, tolerance, min_size=5, max_size=10):
-    """Find 5-7 machine combinations using dynamic programming"""
-    if not capacities_names:
-        return []
-    
-    dp = [defaultdict(list) for _ in range(max_size + 1)]
-    dp[0][0] = [[]]
-    results = []
-    
-    for cap, name in capacities_names:
-        for size in range(min(max_size, len(capacities_names)), min_size - 1, -1):
-            for s in list(dp[size - 1]):
-                new_sum = s + cap
-                if new_sum > target + tolerance:
-                    continue
-                for combo in dp[size - 1][s]:
-                    new_combo = combo + [name]
-                    dp[size][new_sum].append(new_combo)
-                    if abs(new_sum - target) <= tolerance:
-                        results.append(new_combo)
-    return results
+# Initialize result list
+all_results = []
 
-def find_all_valid_combinations(target_kw, machine_data, tolerance=0.9):
-    """Return all valid machine combinations (1 to 7 machines)"""
-    capacities_names = sorted(
-        pre_filter_machines(target_kw, tolerance, machine_data),
-        key=lambda x: -x[0]
-    )
-    
-    if not capacities_names:
-        return []
-    
-    small_combos = find_small_combinations(capacities_names, target_kw, tolerance)
-    large_combos = []
-    if len(capacities_names) >= 5:
-        large_combos = find_large_combinations_dp(capacities_names, target_kw, tolerance)
-    
-    return small_combos + large_combos
+# Loop through each sheet
+for sheet_name in energy_xls.sheet_names:
+    energy_df = energy_xls.parse(sheet_name)
 
-def process_chunk(args):
-    """Process a data chunk in parallel"""
-    chunk, machine_data = args
-    results = []
-    for _, row in chunk.iterrows():
-        combos = find_all_valid_combinations(row['total_kw'], machine_data, tolerance=0.5)
-        results.append({
-            'timestamp': row['timestamp'],
-            'total_kw': row['total_kw'],
-            'valid_combinations_count': len(combos),
-            'valid_combinations_sets': str(combos) if combos else "[]"
+    for _, row in energy_df[['timestamp', 'total_kW']].dropna().iterrows():
+        timestamp = row['timestamp']
+        target_kw = row['total_kW']
+        
+        valid_combinations = []
+
+        for r in range(1, len(machine_list) + 1):
+            for combo in combinations(machine_list, r):
+                combo_kw = sum([cap for _, cap in combo])
+                if abs(combo_kw - target_kw) <= tolerance:
+                    valid_combinations.append([name for name, _ in combo])
+        
+        all_results.append({
+            'sheet': sheet_name,
+            'timestamp': timestamp,
+            'total_kw': target_kw,
+            'number_of_combinations': len(valid_combinations),
+            'combinations': str(valid_combinations)
         })
-    return results
 
-def main():
-    start_time = time.time()
-    
-    # Load machine capacity data
-    capacity_df = pd.read_excel("final_machine_capacity.xlsx")
-    machine_data = list(zip(
-        capacity_df['machine_capacity_(kw)'],
-        capacity_df['machine_name']
-    ))
-    
-    # Load energy meter data from all sheets
-    energy_sheets = pd.read_excel("energy_meter_with_nonzero_delta.xlsx", sheet_name=None)
-    energy_df = pd.concat(energy_sheets.values(), ignore_index=True)
-    energy_df.columns = energy_df.columns.str.strip().str.lower().str.replace(' ', '_')
+# Convert all results to DataFrame
+final_df = pd.DataFrame(all_results)
 
-    energy_df = energy_df[energy_df['total_kw'].fillna(0) != 0]
-    
-    # Prepare parallel processing
-    num_cores = min(cpu_count(), 8)
-    chunk_size = len(energy_df) // num_cores + 1
-    chunks = [energy_df.iloc[i:i + chunk_size].copy() for i in range(0, len(energy_df), chunk_size)]
-    
-    print(f"🔄 Processing {len(energy_df)} timestamps from {len(energy_sheets)} sheets with ±0.9kW tolerance...")
-    
-    with Pool(num_cores) as pool:
-        results = pool.map(process_chunk, [(chunk, machine_data) for chunk in chunks])
-    
-    # Flatten results
-    output_df = pd.DataFrame([r for chunk in results for r in chunk])
-    output_df['valid_combinations_sets'] = output_df['valid_combinations_sets'].apply(ast.literal_eval)
-    
-    # Save results
-    output_df.to_excel("combinations_with_0.5kw_tolerance.xlsx", 
-                       columns=['timestamp', 'total_kw', 'valid_combinations_count', 'valid_combinations_sets'],
-                       index=False)
-    
-    print(f"\n✅ Completed in {time.time() - start_time:.2f} seconds")
-    print(f"Total combinations found: {output_df['valid_combinations_count'].sum()}")
-    print("📊 Sample output:")
-    print(output_df.head(2).to_string())
+# Save to Excel
+final_df.to_excel("machine_combinations_output.xlsx", index=False)
 
-if __name__ == "__main__":
-    main()
+print("✅ File 'machine_combinations_output.xlsx' has been created with all sheet data.")
+
