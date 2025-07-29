@@ -42,8 +42,22 @@ for sheet_name in energy_xls.sheet_names:
 # Convert all results to DataFrame
 final_df = pd.DataFrame(all_results)
 
+# ➕ Calculate grand total
+grand_total = final_df['number_of_combinations'].sum()
+
+# Create a new row with only the grand total
+total_row = pd.DataFrame([{
+    'sheet': 'ALL',
+    'timestamp': 'TOTAL',
+    'total_kw': '',
+    'number_of_combinations': grand_total,
+    'combinations': 'TOTAL'
+}])
+
+# Append this total row to the DataFrame
+final_df = pd.concat([final_df, total_row], ignore_index=True)
+
 # Save to Excel
 final_df.to_excel("machine_combinations_output.xlsx", index=False)
 
-print("✅ File 'machine_combinations_output.xlsx' has been created with all sheet data.")
-
+print("✅ File 'machine_combinations_output.xlsx' has been created with a single total row at the end.")
